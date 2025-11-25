@@ -46,13 +46,7 @@ export default function NewCampaignClient({
   // Form data
   const [selectedIntegration, setSelectedIntegration] = useState(integrations[0]?.id || "");
   const [campaignName, setCampaignName] = useState("");
-  const [targetUrl, setTargetUrl] = useState("");
-  const [utmSource, setUtmSource] = useState("");
-  const [utmMedium, setUtmMedium] = useState("");
-  const [utmCampaign, setUtmCampaign] = useState("");
-  const [goalVisitors, setGoalVisitors] = useState("");
-  const [goalDuration, setGoalDuration] = useState("");
-  const [goalBounceRate, setGoalBounceRate] = useState("");
+  const [campaignDescription, setCampaignDescription] = useState("");
 
   const platformIcons: Record<string, React.ReactNode> = {
     google_analytics: <Chrome className="w-5 h-5" />,
@@ -64,15 +58,25 @@ export default function NewCampaignClient({
 
   const handleSubmit = async () => {
     setIsLoading(true);
-    // TODO: Create campaign via API
-    setTimeout(() => {
-      router.push("/dashboard");
-    }, 2000);
+    try {
+      const response = await fetch("/api/campaigns", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          integration_id: selectedIntegration,
+          name: campaignName,
+          description: campaignDescription,
+        }),
+      });
+      if (!response.ok) throw new Error("Failed to create campaign");
+      const data = await response.json();
+      // Redirect to campaign dashboard or show shareable link
+      router.push(`/dashboard/campaigns/${data.campaign.id}`);
+    } catch (e) {
+      alert("Failed to create campaign. Please try again.");
+      setIsLoading(false);
+    }
   };
-
-  const generatedUrl = targetUrl && utmSource && utmMedium && utmCampaign
-    ? `${targetUrl}${targetUrl.includes('?') ? '&' : '?'}utm_source=${encodeURIComponent(utmSource)}&utm_medium=${encodeURIComponent(utmMedium)}&utm_campaign=${encodeURIComponent(utmCampaign)}`
-    : "";
 
   return (
     <div className="min-h-screen bg-linear-to-b from-slate-950 via-slate-900 to-slate-950">
@@ -172,7 +176,7 @@ export default function NewCampaignClient({
           <div className="space-y-6">
             <div className="text-center mb-8">
               <h2 className="text-3xl font-bold text-white mb-2">Campaign Details</h2>
-              <p className="text-slate-400">Set up your tracking URL and UTM parameters</p>
+              <p className="text-slate-400">Optionally add a description for this campaign. This will be visible on the public dashboard.</p>
             </div>
 
             <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-6 space-y-6">
@@ -185,80 +189,22 @@ export default function NewCampaignClient({
                   type="text"
                   value={campaignName}
                   onChange={(e) => setCampaignName(e.target.value)}
-                  placeholder="e.g., Summer Instagram Campaign"
+                  placeholder="e.g., Instagram Promo Nov 2025"
                   className="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
                 />
               </div>
-
-              {/* Target URL */}
+              {/* Campaign Description */}
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-2">
-                  Target URL
+                  Description (optional)
                 </label>
-                <div className="relative">
-                  <Link2 className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
-                  <input
-                    type="url"
-                    value={targetUrl}
-                    onChange={(e) => setTargetUrl(e.target.value)}
-                    placeholder="https://yourwebsite.com/landing-page"
-                    className="w-full pl-10 pr-4 py-3 bg-slate-950 border border-slate-800 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
+                <textarea
+                  value={campaignDescription}
+                  onChange={(e) => setCampaignDescription(e.target.value)}
+                  placeholder="Describe the campaign, e.g. 'Instagram influencer promo for Black Friday.'"
+                  className="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 min-h-20"
+                />
               </div>
-
-              {/* UTM Parameters */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">
-                    UTM Source
-                  </label>
-                  <input
-                    type="text"
-                    value={utmSource}
-                    onChange={(e) => setUtmSource(e.target.value)}
-                    placeholder="instagram"
-                    className="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">
-                    UTM Medium
-                  </label>
-                  <input
-                    type="text"
-                    value={utmMedium}
-                    onChange={(e) => setUtmMedium(e.target.value)}
-                    placeholder="social"
-                    className="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">
-                    UTM Campaign
-                  </label>
-                  <input
-                    type="text"
-                    value={utmCampaign}
-                    onChange={(e) => setUtmCampaign(e.target.value)}
-                    placeholder="summer2025"
-                    className="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-              </div>
-
-              {/* Generated URL Preview */}
-              {generatedUrl && (
-                <div className="bg-emerald-950/20 border border-emerald-900/50 rounded-lg p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-medium text-emerald-400">Generated Tracking URL:</span>
-                    <button className="p-2 hover:bg-emerald-900/30 rounded-lg transition-all">
-                      <Copy className="w-4 h-4 text-emerald-400" />
-                    </button>
-                  </div>
-                  <code className="text-xs text-slate-300 break-all block">{generatedUrl}</code>
-                </div>
-              )}
             </div>
 
             <div className="flex justify-between pt-6">
@@ -269,103 +215,17 @@ export default function NewCampaignClient({
                 Back
               </button>
               <button
-                onClick={() => setStep(3)}
-                disabled={!campaignName || !targetUrl || !utmSource || !utmMedium || !utmCampaign}
+                onClick={handleSubmit}
+                disabled={!campaignName}
                 className="px-8 py-3 bg-linear-to-r from-emerald-500 to-cyan-500 rounded-lg font-semibold hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Continue
+                Create Campaign
               </button>
             </div>
           </div>
         )}
 
-        {/* Step 3: Goals */}
-        {step === 3 && (
-          <div className="space-y-6">
-            <div className="text-center mb-8">
-              <h2 className="text-3xl font-bold text-white mb-2">Set Campaign Goals</h2>
-              <p className="text-slate-400">Define success metrics for this campaign (optional)</p>
-            </div>
 
-            <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-6 space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {/* Goal Visitors */}
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">
-                    Target Visitors
-                  </label>
-                  <div className="relative">
-                    <Users className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
-                    <input
-                      type="number"
-                      value={goalVisitors}
-                      onChange={(e) => setGoalVisitors(e.target.value)}
-                      placeholder="1000"
-                      className="w-full pl-10 pr-4 py-3 bg-slate-950 border border-slate-800 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
-                    />
-                  </div>
-                </div>
-
-                {/* Goal Duration */}
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">
-                    Avg. Duration (seconds)
-                  </label>
-                  <div className="relative">
-                    <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
-                    <input
-                      type="number"
-                      value={goalDuration}
-                      onChange={(e) => setGoalDuration(e.target.value)}
-                      placeholder="120"
-                      className="w-full pl-10 pr-4 py-3 bg-slate-950 border border-slate-800 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
-                    />
-                  </div>
-                </div>
-
-                {/* Goal Bounce Rate */}
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">
-                    Max Bounce Rate (%)
-                  </label>
-                  <div className="relative">
-                    <Activity className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
-                    <input
-                      type="number"
-                      value={goalBounceRate}
-                      onChange={(e) => setGoalBounceRate(e.target.value)}
-                      placeholder="40"
-                      max="100"
-                      className="w-full pl-10 pr-4 py-3 bg-slate-950 border border-slate-800 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-blue-950/20 border border-blue-900/50 rounded-lg p-4">
-                <p className="text-sm text-blue-400">
-                  💡 <strong>Tip:</strong> These goals help you track campaign performance and get quality scores. You can always adjust them later.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex justify-between pt-6">
-              <button
-                onClick={() => setStep(2)}
-                className="px-6 py-3 border border-slate-700 rounded-lg font-medium text-slate-300 hover:bg-slate-800 transition-all"
-              >
-                Back
-              </button>
-              <button
-                onClick={handleSubmit}
-                disabled={isLoading}
-                className="px-8 py-3 bg-linear-to-r from-emerald-500 to-cyan-500 rounded-lg font-semibold hover:shadow-lg transition-all disabled:opacity-50"
-              >
-                {isLoading ? "Creating Campaign..." : "Create Campaign"}
-              </button>
-            </div>
-          </div>
-        )}
       </main>
     </div>
   );
