@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const code = searchParams.get("code");
-  const state = searchParams.get("state"); // user_id
+  const state = searchParams.get("state"); // JSON string with userId and from
   const error = searchParams.get("error");
 
   // Handle OAuth errors
@@ -22,6 +22,11 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    // Parse state to get userId and source
+    const stateData = JSON.parse(state);
+    const userId = stateData.userId;
+    const from = stateData.from || 'dashboard';
+
     // Exchange authorization code for tokens
     const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
@@ -105,14 +110,14 @@ export async function GET(request: NextRequest) {
       refresh_token,
       expires_in,
       properties,
-      user_id: state,
+      user_id: userId,
     };
 
     // In production, store in Redis/session store. For now, we'll use a temp database table
     const { error: insertError } = await supabase
       .from("oauth_temp_sessions")
       .insert({
-        user_id: state,
+        user_id: userId,
         session_data: tempData,
         expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(), // 10 minutes
       });
@@ -123,15 +128,15 @@ export async function GET(request: NextRequest) {
       const encoded = Buffer.from(JSON.stringify(tempData)).toString("base64");
       return NextResponse.redirect(
         new URL(
-          `/dashboard/integrations/google/properties?session=${encoded}`,
+          `/dashboard/integrations/google/properties?session=${encoded}&from=${from}`,
           request.url
         )
       );
     }
 
-    // Redirect to property selection page
+    // Redirect to property selection page with 'from' param
     return NextResponse.redirect(
-      new URL(`/dashboard/integrations/google/properties`, request.url)
+      new URL(`/dashboard/integrations/google/properties?from=${from}`, request.url)
     );
   } catch (error) {
     console.error("OAuth callback error:", error);

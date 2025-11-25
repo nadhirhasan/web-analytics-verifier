@@ -1,269 +1,122 @@
--- Web Analytics Verifier Database Schema
--- Run this in your Supabase SQL Editor
+-- WARNING: This schema is for context only and is not meant to be run.
+-- Table order and constraints may not be valid for execution.
 
--- Enable UUID extension
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-
--- Users table (extends Supabase auth.users)
-CREATE TABLE IF NOT EXISTS public.users (
-  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-  email TEXT UNIQUE NOT NULL,
-  name TEXT NOT NULL,
-  avatar_url TEXT,
-  subscription_tier TEXT DEFAULT 'free' CHECK (subscription_tier IN ('free', 'pro', 'business', 'enterprise')),
-  subscription_status TEXT DEFAULT 'active' CHECK (subscription_status IN ('active', 'cancelled', 'expired')),
-  subscription_ends_at TIMESTAMPTZ,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
+CREATE TABLE public.activity_logs (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  user_id uuid,
+  campaign_id uuid,
+  action text NOT NULL,
+  details jsonb,
+  ip_address inet,
+  user_agent text,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT activity_logs_pkey PRIMARY KEY (id),
+  CONSTRAINT activity_logs_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id),
+  CONSTRAINT activity_logs_campaign_id_fkey FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id)
 );
-
--- Google Analytics Accounts table
-CREATE TABLE IF NOT EXISTS public.google_analytics_accounts (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
-  account_id TEXT NOT NULL,
-  property_id TEXT NOT NULL,
-  property_name TEXT,
-  access_token TEXT NOT NULL,
-  refresh_token TEXT NOT NULL,
-  token_expires_at TIMESTAMPTZ,
-  is_active BOOLEAN DEFAULT true,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE(user_id, property_id)
+CREATE TABLE public.campaign_metrics (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  campaign_id uuid NOT NULL,
+  date date NOT NULL,
+  visitors integer DEFAULT 0,
+  sessions integer DEFAULT 0,
+  page_views integer DEFAULT 0,
+  bounce_rate numeric,
+  avg_session_duration integer,
+  new_users integer DEFAULT 0,
+  returning_users integer DEFAULT 0,
+  conversion_rate numeric,
+  top_sources jsonb,
+  top_countries jsonb,
+  top_devices jsonb,
+  hourly_data jsonb,
+  last_updated timestamp with time zone DEFAULT now(),
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT campaign_metrics_pkey PRIMARY KEY (id),
+  CONSTRAINT campaign_metrics_campaign_id_fkey FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id)
 );
-
--- Campaigns table
-CREATE TABLE IF NOT EXISTS public.campaigns (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
-  ga_account_id UUID REFERENCES public.google_analytics_accounts(id) ON DELETE SET NULL,
-  name TEXT NOT NULL,
-  target_url TEXT NOT NULL,
-  utm_source TEXT NOT NULL,
-  utm_medium TEXT NOT NULL,
-  utm_campaign TEXT NOT NULL,
-  utm_term TEXT,
-  utm_content TEXT,
-  goal_visitors INTEGER,
-  goal_duration INTEGER, -- in seconds
-  goal_bounce_rate DECIMAL(5,2), -- percentage
-  start_date TIMESTAMPTZ DEFAULT NOW(),
-  end_date TIMESTAMPTZ,
-  shareable_link TEXT UNIQUE NOT NULL,
-  shareable_token TEXT UNIQUE NOT NULL,
-  status TEXT DEFAULT 'active' CHECK (status IN ('active', 'paused', 'completed', 'archived')),
-  is_public BOOLEAN DEFAULT true,
-  quality_score DECIMAL(5,2), -- 0-100
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
+CREATE TABLE public.campaigns (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  user_id uuid NOT NULL,
+  name text NOT NULL,
+  start_date timestamp with time zone DEFAULT now(),
+  end_date timestamp with time zone,
+  shareable_token text NOT NULL UNIQUE,
+  status text DEFAULT 'active'::text CHECK (status = ANY (ARRAY['active'::text, 'paused'::text, 'completed'::text, 'archived'::text])),
+  is_public boolean DEFAULT true,
+  quality_score numeric,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  integration_id uuid,
+  description text,
+  property_id text,
+  CONSTRAINT campaigns_pkey PRIMARY KEY (id),
+  CONSTRAINT campaigns_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id),
+  CONSTRAINT campaigns_integration_id_fkey FOREIGN KEY (integration_id) REFERENCES public.integrations(id)
 );
-
--- Campaign Metrics table (cached/aggregated data from GA)
-CREATE TABLE IF NOT EXISTS public.campaign_metrics (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  campaign_id UUID NOT NULL REFERENCES public.campaigns(id) ON DELETE CASCADE,
-  date DATE NOT NULL,
-  visitors INTEGER DEFAULT 0,
-  sessions INTEGER DEFAULT 0,
-  page_views INTEGER DEFAULT 0,
-  bounce_rate DECIMAL(5,2),
-  avg_session_duration INTEGER, -- in seconds
-  new_users INTEGER DEFAULT 0,
-  returning_users INTEGER DEFAULT 0,
-  conversion_rate DECIMAL(5,2),
-  top_sources JSONB, -- [{source: 'facebook', visitors: 100}, ...]
-  top_countries JSONB, -- [{country: 'US', visitors: 150}, ...]
-  top_devices JSONB, -- [{device: 'mobile', visitors: 200}, ...]
-  hourly_data JSONB, -- [{hour: 0, visitors: 10}, ...]
-  last_updated TIMESTAMPTZ DEFAULT NOW(),
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE(campaign_id, date)
+CREATE TABLE public.freelancer_access (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  campaign_id uuid NOT NULL,
+  freelancer_email text NOT NULL,
+  access_token text NOT NULL UNIQUE,
+  can_view_details boolean DEFAULT true,
+  can_export_data boolean DEFAULT false,
+  expires_at timestamp with time zone,
+  last_accessed_at timestamp with time zone,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT freelancer_access_pkey PRIMARY KEY (id),
+  CONSTRAINT freelancer_access_campaign_id_fkey FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id)
 );
-
--- Freelancer Access table (optional - for future features)
-CREATE TABLE IF NOT EXISTS public.freelancer_access (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  campaign_id UUID NOT NULL REFERENCES public.campaigns(id) ON DELETE CASCADE,
-  freelancer_email TEXT NOT NULL,
-  access_token TEXT UNIQUE NOT NULL,
-  can_view_details BOOLEAN DEFAULT true,
-  can_export_data BOOLEAN DEFAULT false,
-  expires_at TIMESTAMPTZ,
-  last_accessed_at TIMESTAMPTZ,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE(campaign_id, freelancer_email)
+CREATE TABLE public.google_analytics_accounts (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  user_id uuid NOT NULL,
+  account_id text NOT NULL,
+  property_id text NOT NULL,
+  property_name text,
+  access_token text NOT NULL,
+  refresh_token text NOT NULL,
+  token_expires_at timestamp with time zone,
+  is_active boolean DEFAULT true,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT google_analytics_accounts_pkey PRIMARY KEY (id),
+  CONSTRAINT google_analytics_accounts_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id)
 );
-
--- Activity Log table (audit trail)
-CREATE TABLE IF NOT EXISTS public.activity_logs (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID REFERENCES public.users(id) ON DELETE SET NULL,
-  campaign_id UUID REFERENCES public.campaigns(id) ON DELETE SET NULL,
-  action TEXT NOT NULL,
-  details JSONB,
-  ip_address INET,
-  user_agent TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW()
+CREATE TABLE public.integrations (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  user_id uuid NOT NULL,
+  platform_type text NOT NULL CHECK (platform_type = ANY (ARRAY['google_analytics'::text, 'shopify'::text, 'woocommerce'::text, 'javascript_pixel'::text, 'plausible'::text, 'fathom'::text, 'custom_api'::text])),
+  platform_name text NOT NULL,
+  credentials jsonb,
+  config jsonb,
+  status text DEFAULT 'active'::text CHECK (status = ANY (ARRAY['active'::text, 'inactive'::text, 'error'::text])),
+  last_sync_at timestamp with time zone,
+  sync_error text,
+  is_primary boolean DEFAULT false,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT integrations_pkey PRIMARY KEY (id),
+  CONSTRAINT integrations_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id)
 );
-
--- Indexes for performance
-CREATE INDEX IF NOT EXISTS idx_campaigns_user_id ON public.campaigns(user_id);
-CREATE INDEX IF NOT EXISTS idx_campaigns_status ON public.campaigns(status);
-CREATE INDEX IF NOT EXISTS idx_campaigns_shareable_token ON public.campaigns(shareable_token);
-CREATE INDEX IF NOT EXISTS idx_ga_accounts_user_id ON public.google_analytics_accounts(user_id);
-CREATE INDEX IF NOT EXISTS idx_campaign_metrics_campaign_id ON public.campaign_metrics(campaign_id);
-CREATE INDEX IF NOT EXISTS idx_campaign_metrics_date ON public.campaign_metrics(date);
-CREATE INDEX IF NOT EXISTS idx_freelancer_access_campaign_id ON public.freelancer_access(campaign_id);
-CREATE INDEX IF NOT EXISTS idx_activity_logs_user_id ON public.activity_logs(user_id);
-CREATE INDEX IF NOT EXISTS idx_activity_logs_campaign_id ON public.activity_logs(campaign_id);
-
--- Updated_at trigger function
-CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$
-BEGIN
-  NEW.updated_at = NOW();
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
--- Apply updated_at triggers
-CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON public.users
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_ga_accounts_updated_at BEFORE UPDATE ON public.google_analytics_accounts
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_campaigns_updated_at BEFORE UPDATE ON public.campaigns
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
--- Row Level Security (RLS) Policies
-
--- Enable RLS
-ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.google_analytics_accounts ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.campaigns ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.campaign_metrics ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.freelancer_access ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.activity_logs ENABLE ROW LEVEL SECURITY;
-
--- Users policies
-CREATE POLICY "Users can view own profile" ON public.users
-  FOR SELECT USING (auth.uid() = id);
-
-CREATE POLICY "Users can update own profile" ON public.users
-  FOR UPDATE USING (auth.uid() = id);
-
--- Google Analytics Accounts policies
-CREATE POLICY "Users can view own GA accounts" ON public.google_analytics_accounts
-  FOR SELECT USING (auth.uid() = user_id);
-
-CREATE POLICY "Users can insert own GA accounts" ON public.google_analytics_accounts
-  FOR INSERT WITH CHECK (auth.uid() = user_id);
-
-CREATE POLICY "Users can update own GA accounts" ON public.google_analytics_accounts
-  FOR UPDATE USING (auth.uid() = user_id);
-
-CREATE POLICY "Users can delete own GA accounts" ON public.google_analytics_accounts
-  FOR DELETE USING (auth.uid() = user_id);
-
--- Campaigns policies
-CREATE POLICY "Users can view own campaigns" ON public.campaigns
-  FOR SELECT USING (auth.uid() = user_id);
-
-CREATE POLICY "Public campaigns are viewable by shareable_token" ON public.campaigns
-  FOR SELECT USING (is_public = true);
-
-CREATE POLICY "Users can insert own campaigns" ON public.campaigns
-  FOR INSERT WITH CHECK (auth.uid() = user_id);
-
-CREATE POLICY "Users can update own campaigns" ON public.campaigns
-  FOR UPDATE USING (auth.uid() = user_id);
-
-CREATE POLICY "Users can delete own campaigns" ON public.campaigns
-  FOR DELETE USING (auth.uid() = user_id);
-
--- Campaign Metrics policies
-CREATE POLICY "Users can view metrics for own campaigns" ON public.campaign_metrics
-  FOR SELECT USING (
-    EXISTS (
-      SELECT 1 FROM public.campaigns
-      WHERE campaigns.id = campaign_metrics.campaign_id
-      AND campaigns.user_id = auth.uid()
-    )
-  );
-
-CREATE POLICY "Public campaign metrics viewable by anyone" ON public.campaign_metrics
-  FOR SELECT USING (
-    EXISTS (
-      SELECT 1 FROM public.campaigns
-      WHERE campaigns.id = campaign_metrics.campaign_id
-      AND campaigns.is_public = true
-    )
-  );
-
--- Freelancer Access policies
-CREATE POLICY "Users can manage freelancer access for own campaigns" ON public.freelancer_access
-  FOR ALL USING (
-    EXISTS (
-      SELECT 1 FROM public.campaigns
-      WHERE campaigns.id = freelancer_access.campaign_id
-      AND campaigns.user_id = auth.uid()
-    )
-  );
-
--- Activity Logs policies
-CREATE POLICY "Users can view own activity logs" ON public.activity_logs
-  FOR SELECT USING (auth.uid() = user_id);
-
--- Function to generate shareable link token
-CREATE OR REPLACE FUNCTION generate_shareable_token()
-RETURNS TEXT AS $$
-BEGIN
-  RETURN encode(gen_random_bytes(16), 'hex');
-END;
-$$ LANGUAGE plpgsql;
-
--- Function to create user profile on signup
-CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS TRIGGER AS $$
-BEGIN
-  INSERT INTO public.users (id, email, name)
-  VALUES (
-    NEW.id,
-    NEW.email,
-    COALESCE(NEW.raw_user_meta_data->>'name', split_part(NEW.email, '@', 1))
-  );
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- Trigger to create user profile on signup
-CREATE OR REPLACE TRIGGER on_auth_user_created
-  AFTER INSERT ON auth.users
-  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
-
--- Function to log activity
-CREATE OR REPLACE FUNCTION log_activity(
-  p_user_id UUID,
-  p_campaign_id UUID,
-  p_action TEXT,
-  p_details JSONB DEFAULT '{}'
-)
-RETURNS UUID AS $$
-DECLARE
-  v_log_id UUID;
-BEGIN
-  INSERT INTO public.activity_logs (user_id, campaign_id, action, details)
-  VALUES (p_user_id, p_campaign_id, p_action, p_details)
-  RETURNING id INTO v_log_id;
-  
-  RETURN v_log_id;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- Grant necessary permissions
-GRANT USAGE ON SCHEMA public TO authenticated;
-GRANT ALL ON ALL TABLES IN SCHEMA public TO authenticated;
-GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO authenticated;
-GRANT ALL ON ALL ROUTINES IN SCHEMA public TO authenticated;
+CREATE TABLE public.oauth_temp_sessions (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  session_data jsonb NOT NULL,
+  expires_at timestamp with time zone NOT NULL,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT oauth_temp_sessions_pkey PRIMARY KEY (id),
+  CONSTRAINT oauth_temp_sessions_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
+CREATE TABLE public.users (
+  id uuid NOT NULL,
+  email text NOT NULL UNIQUE,
+  name text NOT NULL,
+  avatar_url text,
+  subscription_tier text DEFAULT 'free'::text CHECK (subscription_tier = ANY (ARRAY['free'::text, 'pro'::text, 'business'::text, 'enterprise'::text])),
+  subscription_status text DEFAULT 'active'::text CHECK (subscription_status = ANY (ARRAY['active'::text, 'cancelled'::text, 'expired'::text])),
+  subscription_ends_at timestamp with time zone,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT users_pkey PRIMARY KEY (id),
+  CONSTRAINT users_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id)
+);

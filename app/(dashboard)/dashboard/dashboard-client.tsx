@@ -38,7 +38,7 @@ interface Campaign {
   name: string;
   target_url: string;
   status: "active" | "paused" | "completed" | "archived";
-  shareable_link: string;
+  shareable_token: string;
   created_at: string;
   quality_score: number | null;
 }
@@ -68,13 +68,25 @@ export default function DashboardClient({
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [showIntegrationModal, setShowIntegrationModal] = useState(false);
+  const [localIntegrations, setLocalIntegrations] = useState(integrations);
+  const [localCampaigns, setLocalCampaigns] = useState(campaigns);
 
   const handleSignOut = async () => {
     await signOut();
   };
 
-  const hasIntegrations = integrations.length > 0;
-  const activeIntegrations = integrations.filter(i => i.status === "active");
+  const handleDeleteIntegration = (id: string) => {
+    setLocalIntegrations(prev => prev.filter(i => i.id !== id));
+    router.refresh();
+  };
+
+  const handleDeleteCampaign = (id: string) => {
+    setLocalCampaigns(prev => prev.filter(c => c.id !== id));
+    router.refresh();
+  };
+
+  const hasIntegrations = localIntegrations.length > 0;
+  const activeIntegrations = localIntegrations.filter(i => i.status === "active");
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
@@ -103,7 +115,7 @@ export default function DashboardClient({
             <NavItem
               icon={<BarChart3 className="w-5 h-5" />}
               label="Campaigns"
-              badge={campaigns.length}
+              badge={localCampaigns.length}
             />
             <NavItem
               icon={<Link2 className="w-5 h-5" />}
@@ -120,7 +132,7 @@ export default function DashboardClient({
                 {profile?.subscription_tier.toUpperCase() || "FREE"} Plan
               </div>
               <div className="text-xs text-slate-400 mb-3">
-                {campaigns.length} / {profile?.subscription_tier === "free" ? "1" : "∞"} campaigns
+                {localCampaigns.length} / {profile?.subscription_tier === "free" ? "1" : "∞"} campaigns
               </div>
               <button className="w-full px-3 py-2 bg-linear-to-r from-emerald-500 to-cyan-500 rounded-lg text-sm font-medium hover:shadow-lg transition-all">
                 Upgrade Plan
@@ -256,8 +268,12 @@ export default function DashboardClient({
                 </button>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {integrations.map((integration) => (
-                  <IntegrationCard key={integration.id} integration={integration} />
+                {localIntegrations.map((integration) => (
+                  <IntegrationCard 
+                    key={integration.id} 
+                    integration={integration}
+                    onDelete={handleDeleteIntegration}
+                  />
                 ))}
               </div>
             </div>
@@ -267,13 +283,13 @@ export default function DashboardClient({
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
             <StatCard
               label="Total Campaigns"
-              value={campaigns.length.toString()}
+              value={localCampaigns.length.toString()}
               change="+0%"
               icon={<BarChart3 className="w-5 h-5" />}
             />
             <StatCard
               label="Active Campaigns"
-              value={campaigns.filter((c) => c.status === "active").length.toString()}
+              value={localCampaigns.filter((c) => c.status === "active").length.toString()}
               change="+0%"
               icon={<TrendingUp className="w-5 h-5" />}
             />
@@ -311,7 +327,7 @@ export default function DashboardClient({
             </div>
 
             {/* Empty State or Campaign List */}
-            {campaigns.length === 0 ? (
+            {localCampaigns.length === 0 ? (
               <div className="p-12 text-center">
                 <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4">
                   <BarChart3 className="w-8 h-8 text-slate-600" />
@@ -342,8 +358,12 @@ export default function DashboardClient({
             ) : (
               <div className="p-6">
                 <div className="space-y-4">
-                  {campaigns.map((campaign) => (
-                    <CampaignCard key={campaign.id} campaign={campaign} />
+                  {localCampaigns.map((campaign) => (
+                    <CampaignCard 
+                      key={campaign.id} 
+                      campaign={campaign}
+                      onDelete={handleDeleteCampaign}
+                    />
                   ))}
                 </div>
               </div>
@@ -360,7 +380,10 @@ export default function DashboardClient({
   );
 }
 
-function IntegrationCard({ integration }: { integration: Integration }) {
+function IntegrationCard({ integration, onDelete }: { integration: Integration; onDelete: (id: string) => void }) {
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
   const platformIcons: Record<string, React.ReactNode> = {
     google_analytics: <Chrome className="w-6 h-6 text-blue-400" />,
     shopify: <ShoppingBag className="w-6 h-6 text-green-400" />,
@@ -373,6 +396,26 @@ function IntegrationCard({ integration }: { integration: Integration }) {
     active: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
     inactive: "bg-slate-500/10 text-slate-400 border-slate-500/20",
     error: "bg-red-500/10 text-red-400 border-red-500/20",
+  };
+
+  const handleDelete = async () => {
+    setIsDeleting(true);
+    try {
+      const response = await fetch(`/api/integrations/${integration.id}`, {
+        method: "DELETE",
+      });
+      if (response.ok) {
+        onDelete(integration.id);
+      } else {
+        alert("Failed to delete integration");
+      }
+    } catch (error) {
+      console.error("Delete error:", error);
+      alert("Failed to delete integration");
+    } finally {
+      setIsDeleting(false);
+      setShowDeleteConfirm(false);
+    }
   };
 
   return (
@@ -391,9 +434,45 @@ function IntegrationCard({ integration }: { integration: Integration }) {
           word.charAt(0).toUpperCase() + word.slice(1)
         ).join(' ')}
       </p>
-      <button className="w-full px-3 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-medium rounded-lg transition-all">
-        Configure
-      </button>
+      <div className="flex gap-2">
+        <button className="flex-1 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-medium rounded-lg transition-all">
+          Configure
+        </button>
+        <button 
+          onClick={() => setShowDeleteConfirm(true)}
+          className="px-3 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-medium rounded-lg transition-all"
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
+      </div>
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-xl max-w-md w-full p-6">
+            <h3 className="text-xl font-bold text-white mb-2">Delete Integration?</h3>
+            <p className="text-slate-400 mb-6">
+              This will remove the integration and set all associated campaigns to have no integration. Are you sure?
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={isDeleting}
+                className="flex-1 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={isDeleting}
+                className="flex-1 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-all disabled:opacity-50"
+              >
+                {isDeleting ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -481,6 +560,7 @@ function IntegrationModal({ onClose }: { onClose: () => void }) {
                 key={option.id}
                 onClick={() => {
                   onClose();
+                  // Add 'from=campaign' param if triggered from campaign creation prompt
                   router.push(option.connectUrl);
                 }}
                 className="relative text-left bg-slate-950 border border-slate-800 rounded-lg p-6 hover:border-emerald-500/50 transition-all group"
@@ -568,8 +648,11 @@ function StatCard({
   );
 }
 
-function CampaignCard({ campaign }: { campaign: Campaign }) {
+function CampaignCard({ campaign, onDelete }: { campaign: Campaign; onDelete: (id: string) => void }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const router = useRouter();
 
   const statusColors = {
     active: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
@@ -578,54 +661,97 @@ function CampaignCard({ campaign }: { campaign: Campaign }) {
     archived: "bg-slate-500/10 text-slate-400 border-slate-500/20",
   };
 
+  const handleDelete = async () => {
+    setIsDeleting(true);
+    try {
+      const response = await fetch(`/api/campaigns/${campaign.id}`, {
+        method: "DELETE",
+      });
+      if (response.ok) {
+        onDelete(campaign.id);
+      } else {
+        alert("Failed to delete campaign");
+      }
+    } catch (error) {
+      console.error("Delete error:", error);
+      alert("Failed to delete campaign");
+    } finally {
+      setIsDeleting(false);
+      setShowDeleteConfirm(false);
+    }
+  };
+
+  const copyShareLink = () => {
+    const shareUrl = `${window.location.origin}/share/${campaign.shareable_token}`;
+    navigator.clipboard.writeText(shareUrl);
+    alert("Share link copied to clipboard!");
+    setMenuOpen(false);
+  };
+
   return (
-    <div className="bg-slate-950 border border-slate-800 rounded-lg p-6 hover:border-emerald-500/30 transition-all">
-      <div className="flex items-start justify-between mb-4">
-        <div className="flex-1">
-          <div className="flex items-center gap-3 mb-2">
-            <h3 className="text-lg font-semibold text-white">{campaign.name}</h3>
-            <span
-              className={`px-3 py-1 text-xs font-medium rounded-full border ${
-                statusColors[campaign.status]
-              }`}
-            >
-              {campaign.status}
-            </span>
-          </div>
-          <p className="text-sm text-slate-400 flex items-center gap-2">
-            <ExternalLink className="w-4 h-4" />
-            {campaign.target_url}
-          </p>
-        </div>
-        <div className="relative">
-          <button
-            onClick={() => setMenuOpen(!menuOpen)}
-            className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg"
-          >
-            <MoreVertical className="w-4 h-4" />
-          </button>
-          {menuOpen && (
-            <div className="absolute right-0 mt-2 w-40 bg-slate-900 border border-slate-800 rounded-lg shadow-xl py-2 z-10">
-              <button className="w-full px-4 py-2 text-left text-sm text-slate-300 hover:bg-slate-800 flex items-center gap-2">
-                <Eye className="w-4 h-4" />
-                View
-              </button>
-              <button className="w-full px-4 py-2 text-left text-sm text-slate-300 hover:bg-slate-800 flex items-center gap-2">
-                <Copy className="w-4 h-4" />
-                Copy Link
-              </button>
-              <button className="w-full px-4 py-2 text-left text-sm text-slate-300 hover:bg-slate-800 flex items-center gap-2">
-                <Pause className="w-4 h-4" />
-                Pause
-              </button>
-              <button className="w-full px-4 py-2 text-left text-sm text-red-400 hover:bg-slate-800 flex items-center gap-2">
-                <Trash2 className="w-4 h-4" />
-                Delete
-              </button>
+    <>
+      <div className="bg-slate-950 border border-slate-800 rounded-lg p-6 hover:border-emerald-500/30 transition-all">
+        <div className="flex items-start justify-between mb-4">
+          <div className="flex-1">
+            <div className="flex items-center gap-3 mb-2">
+              <h3 className="text-lg font-semibold text-white">{campaign.name}</h3>
+              <span
+                className={`px-3 py-1 text-xs font-medium rounded-full border ${
+                  statusColors[campaign.status]
+                }`}
+              >
+                {campaign.status}
+              </span>
             </div>
-          )}
+            <p className="text-sm text-slate-400 flex items-center gap-2">
+              <ExternalLink className="w-4 h-4" />
+              {campaign.target_url || "No URL set"}
+            </p>
+          </div>
+          <div className="relative">
+            <button
+              onClick={() => setMenuOpen(!menuOpen)}
+              className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg"
+            >
+              <MoreVertical className="w-4 h-4" />
+            </button>
+            {menuOpen && (
+              <div className="absolute right-0 mt-2 w-40 bg-slate-900 border border-slate-800 rounded-lg shadow-xl py-2 z-10">
+                <button 
+                  onClick={() => {
+                    router.push(`/share/${campaign.shareable_token}`);
+                    setMenuOpen(false);
+                  }}
+                  className="w-full px-4 py-2 text-left text-sm text-slate-300 hover:bg-slate-800 flex items-center gap-2"
+                >
+                  <Eye className="w-4 h-4" />
+                  View
+                </button>
+                <button 
+                  onClick={copyShareLink}
+                  className="w-full px-4 py-2 text-left text-sm text-slate-300 hover:bg-slate-800 flex items-center gap-2"
+                >
+                  <Copy className="w-4 h-4" />
+                  Copy Link
+                </button>
+                <button className="w-full px-4 py-2 text-left text-sm text-slate-300 hover:bg-slate-800 flex items-center gap-2">
+                  <Pause className="w-4 h-4" />
+                  Pause
+                </button>
+                <button 
+                  onClick={() => {
+                    setShowDeleteConfirm(true);
+                    setMenuOpen(false);
+                  }}
+                  className="w-full px-4 py-2 text-left text-sm text-red-400 hover:bg-slate-800 flex items-center gap-2"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Delete
+                </button>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
 
       <div className="grid grid-cols-3 gap-4 mb-4">
         <div>
@@ -647,13 +773,48 @@ function CampaignCard({ campaign }: { campaign: Campaign }) {
       </div>
 
       <div className="flex items-center gap-2">
-        <button className="flex-1 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg transition-all text-sm font-medium">
+        <button 
+          onClick={() => router.push(`/share/${campaign.shareable_token}`)}
+          className="flex-1 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg transition-all text-sm font-medium"
+        >
           View Dashboard
         </button>
-        <button className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg transition-all">
+        <button 
+          onClick={copyShareLink}
+          className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg transition-all"
+        >
           <Copy className="w-4 h-4" />
         </button>
       </div>
     </div>
+
+    {/* Delete Confirmation Modal */}
+    {showDeleteConfirm && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+        <div className="bg-slate-900 border border-slate-800 rounded-xl max-w-md w-full p-6">
+          <h3 className="text-xl font-bold text-white mb-2">Delete Campaign?</h3>
+          <p className="text-slate-400 mb-6">
+            This will permanently delete "<strong>{campaign.name}</strong>" and all its metrics. This action cannot be undone.
+          </p>
+          <div className="flex gap-3">
+            <button
+              onClick={() => setShowDeleteConfirm(false)}
+              disabled={isDeleting}
+              className="flex-1 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg transition-all"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleDelete}
+              disabled={isDeleting}
+              className="flex-1 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-all disabled:opacity-50"
+            >
+              {isDeleting ? "Deleting..." : "Delete"}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }

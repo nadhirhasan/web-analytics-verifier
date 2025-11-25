@@ -30,6 +30,16 @@ export default function GoogleConnectClient({
   const handleConnect = async () => {
     setIsConnecting(true);
     
+    // Check if user came from campaign creation
+    const urlParams = new URLSearchParams(window.location.search);
+    const fromCampaign = urlParams.get('from') === 'campaign';
+    
+    // Build state with user ID and optional campaign flag
+    const state = JSON.stringify({ 
+      userId, 
+      from: fromCampaign ? 'campaign' : 'dashboard' 
+    });
+    
     // Build real Google OAuth URL
     const params = new URLSearchParams({
       client_id: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "",
@@ -41,7 +51,7 @@ export default function GoogleConnectClient({
       ].join(" "),
       access_type: "offline",
       prompt: "consent",
-      state: userId, // Pass user ID to identify after callback
+      state: state, // Pass user ID and source
     });
 
     // Redirect to Google OAuth consent screen

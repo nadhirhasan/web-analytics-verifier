@@ -62,7 +62,7 @@ export default function GooglePropertiesClient({
         },
         body: JSON.stringify({
           platform_type: "google_analytics",
-          platform_name: selectedPropertyData?.displayName || "Google Analytics",
+          platform_name: "Google Analytics", // Always use "Google Analytics" not property name
           credentials: {
             property_id: selectedPropertyData?.propertyId,
             property_name: selectedPropertyData?.displayName,
@@ -82,7 +82,17 @@ export default function GooglePropertiesClient({
         method: "POST",
       });
 
-      router.push("/dashboard?connected=google_analytics");
+      // Check if user came from campaign creation
+      const urlParams = new URLSearchParams(window.location.search);
+      const fromCampaign = urlParams.get('from') === 'campaign';
+      
+      if (fromCampaign) {
+        // Redirect back to campaign creation with 'connected' flag
+        router.push("/dashboard/campaigns/new?connected=true");
+      } else {
+        // Redirect to dashboard
+        router.push("/dashboard?connected=google_analytics");
+      }
     } catch (error) {
       console.error("Error saving integration:", error);
       alert("Failed to connect. Please try again.");

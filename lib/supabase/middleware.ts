@@ -40,6 +40,7 @@ export async function updateSession(request: NextRequest) {
     !user &&
     !request.nextUrl.pathname.startsWith('/auth') &&
     !request.nextUrl.pathname.startsWith('/share') &&
+    !request.nextUrl.pathname.startsWith('/api/share') &&
     request.nextUrl.pathname !== '/'
   ) {
     const url = request.nextUrl.clone()
