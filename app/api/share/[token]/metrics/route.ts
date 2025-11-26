@@ -122,7 +122,12 @@ export async function GET(
     
     if (cachedData) {
       console.log(`✅ Cache HIT for ${cacheKey}`);
-      return NextResponse.json(cachedData);
+      return NextResponse.json(cachedData, {
+        headers: {
+          'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600',
+          'X-Cache': 'HIT',
+        },
+      });
     }
     
     console.log(`❌ Cache MISS for ${cacheKey}`);
@@ -587,7 +592,11 @@ export async function GET(
     metricsCache.set(cacheKey, responseData);
     console.log(`💾 Cached data for ${cacheKey}`);
 
-    return NextResponse.json(responseData);
+    return NextResponse.json(responseData, {
+      headers: {
+        'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600',
+      },
+    });
   } catch (error) {
     console.error("Metrics API error:", error);
     return NextResponse.json(
