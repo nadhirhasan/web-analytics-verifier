@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { metricsCache } from "@/lib/cache";
 
 const GA_DATA_API = "https://analyticsdata.googleapis.com/v1beta";
 
@@ -114,6 +115,17 @@ export async function GET(
         { status: 400 }
       );
     }
+
+    // Check cache first - cache key based on propertyId and date range
+    const cacheKey = `metrics:${propertyId}:${rangeParam}:${customStart || ''}:${customEnd || ''}`;
+    const cachedData = metricsCache.get(cacheKey);
+    
+    if (cachedData) {
+      console.log(`✅ Cache HIT for ${cacheKey}`);
+      return NextResponse.json(cachedData);
+    }
+    
+    console.log(`❌ Cache MISS for ${cacheKey}`);
 
     if (!refreshToken) {
       return NextResponse.json(
@@ -548,7 +560,8 @@ export async function GET(
 
     console.log('Channel Group data:', channelGroupData);
 
-    return NextResponse.json({
+    // Prepare response data
+    const responseData = {
       metrics: metricsData,
       totalMetrics: totalMetricsData,
       sources: sourcesData,
@@ -568,7 +581,13 @@ export async function GET(
       pageTitles: pageTitlesData,
       channelGroup: channelGroupData,
       userActivity: userActivityData,
-    });
+    };
+
+    // Cache the response for 5 minutes
+    metricsCache.set(cacheKey, responseData);
+    console.log(`💾 Cached data for ${cacheKey}`);
+
+    return NextResponse.json(responseData);
   } catch (error) {
     console.error("Metrics API error:", error);
     return NextResponse.json(
