@@ -172,266 +172,153 @@ export async function GET(
       console.log(`✅ Token valid for ${Math.floor(timeUntilExpiry / 60)} more minutes, skipping refresh`);
     }
 
-    // Fetch GA4 metrics - Time series data with breakdown by hour/day
-    const metricsResponse = await fetch(
-      `${GA_DATA_API}/properties/${propertyId}:runReport`,
-      {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          dateRanges: [
-            { startDate, endDate },
-          ],
-          metrics: [
-            { name: "activeUsers" },
-            { name: "sessions" },
-            { name: "averageSessionDuration" },
-            { name: "bounceRate" },
-            { name: "screenPageViews" },
-            { name: "newUsers" },
-            { name: "engagementRate" },
-            { name: "engagedSessions" },
-            { name: "screenPageViewsPerSession" },
-            { name: "eventCount" },
-          ],
-          dimensions: [
-            timeDimension,
-          ],
-        }),
-      }
-    );
-
-    if (!metricsResponse.ok) {
-      const errorData = await metricsResponse.json();
-      console.error("GA API error:", errorData);
-      return NextResponse.json(
-        { error: "Failed to fetch GA data", details: errorData },
-        { status: 500 }
+    // ========================================
+    // PARALLEL API CALLS - All 19 GA4 requests execute simultaneously
+    // ========================================
+    
+    // Helper function to create GA4 API requests
+    const makeGARequest = (metrics: any[], dimensions: any[], dateRange: { startDate: string; endDate: string }, options: any = {}) => {
+      return fetch(
+        `${GA_DATA_API}/properties/${propertyId}:runReport`,
+        {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            dateRanges: [dateRange],
+            metrics,
+            dimensions,
+            ...options,
+          }),
+        }
       );
-    }
+    };
 
-    const metricsData = await metricsResponse.json();
+    // Helper to add dateHour dimension for 1-day range
+    const addDateHour = (baseDims: any[]) => 
+      rangeParam === '1d' ? [...baseDims, { name: "dateHour" }] : baseDims;
 
-    // Fetch TOTAL metrics for the period (without time dimension breakdown)
-    const totalMetricsResponse = await fetch(
-      `${GA_DATA_API}/properties/${propertyId}:runReport`,
-      {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          dateRanges: [
-            { startDate, endDate },
-          ],
-          metrics: [
-            { name: "activeUsers" },
-            { name: "sessions" },
-            { name: "averageSessionDuration" },
-            { name: "bounceRate" },
-            { name: "screenPageViews" },
-            { name: "newUsers" },
-            { name: "engagementRate" },
-            { name: "engagedSessions" },
-            { name: "screenPageViewsPerSession" },
-            { name: "eventCount" },
-          ],
-          // NO dimensions - this gives us aggregated totals
-        }),
-      }
-    );
-
-    const totalMetricsData = totalMetricsResponse.ok ? await totalMetricsResponse.json() : null;
-
-    // Fetch traffic sources
-    const sourcesDimensions = [{ name: "sessionSource" }];
-    if (rangeParam === '1d') sourcesDimensions.push({ name: "dateHour" });
-    
-    const sourcesResponse = await fetch(
-      `${GA_DATA_API}/properties/${propertyId}:runReport`,
-      {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          dateRanges: [
-            { startDate: breakdownStartDate, endDate: breakdownEndDate },
-          ],
-          metrics: [
-            { name: "activeUsers" },
-          ],
-          dimensions: sourcesDimensions,
-          orderBys: [
-            {
-              metric: { metricName: "activeUsers" },
-              desc: true,
-            },
-          ],
+    // Execute all 19 API calls in parallel
+    const [
+      metricsResponse,
+      totalMetricsResponse,
+      sourcesResponse,
+      countriesResponse,
+      citiesResponse,
+      browsersResponse,
+      osResponse,
+      referrersResponse,
+      socialResponse,
+      mediumResponse,
+      deviceResponse,
+      regionsResponse,
+      continentsResponse,
+      languagesResponse,
+      mobileDevicesResponse,
+      screenResolutionResponse,
+      pageTitlesResponse,
+      channelGroupResponse,
+      userActivityResponse,
+    ] = await Promise.all([
+      // 1. Time series metrics
+      makeGARequest(
+        [
+          { name: "activeUsers" },
+          { name: "sessions" },
+          { name: "averageSessionDuration" },
+          { name: "bounceRate" },
+          { name: "screenPageViews" },
+          { name: "newUsers" },
+          { name: "engagementRate" },
+          { name: "engagedSessions" },
+          { name: "screenPageViewsPerSession" },
+          { name: "eventCount" },
+        ],
+        [timeDimension],
+        { startDate, endDate }
+      ),
+      
+      // 2. Total metrics (no dimensions)
+      makeGARequest(
+        [
+          { name: "activeUsers" },
+          { name: "sessions" },
+          { name: "averageSessionDuration" },
+          { name: "bounceRate" },
+          { name: "screenPageViews" },
+          { name: "newUsers" },
+          { name: "engagementRate" },
+          { name: "engagedSessions" },
+          { name: "screenPageViewsPerSession" },
+          { name: "eventCount" },
+        ],
+        [],
+        { startDate, endDate }
+      ),
+      
+      // 3. Traffic sources
+      makeGARequest(
+        [{ name: "activeUsers" }],
+        addDateHour([{ name: "sessionSource" }]),
+        { startDate: breakdownStartDate, endDate: breakdownEndDate },
+        {
+          orderBys: [{ metric: { metricName: "activeUsers" }, desc: true }],
           limit: 5,
-        }),
-      }
-    );
-
-    const sourcesData = sourcesResponse.ok ? await sourcesResponse.json() : null;
-
-    // Fetch countries
-    const countriesDimensions = [{ name: "country" }];
-    if (rangeParam === '1d') countriesDimensions.push({ name: "dateHour" });
-    
-    const countriesResponse = await fetch(
-      `${GA_DATA_API}/properties/${propertyId}:runReport`,
-      {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          dateRanges: [
-            { startDate: breakdownStartDate, endDate: breakdownEndDate },
-          ],
-          metrics: [
-            { name: "activeUsers" },
-          ],
-          dimensions: countriesDimensions,
-          orderBys: [
-            {
-              metric: { metricName: "activeUsers" },
-              desc: true,
-            },
-          ],
+        }
+      ),
+      
+      // 4. Countries
+      makeGARequest(
+        [{ name: "activeUsers" }],
+        addDateHour([{ name: "country" }]),
+        { startDate: breakdownStartDate, endDate: breakdownEndDate },
+        {
+          orderBys: [{ metric: { metricName: "activeUsers" }, desc: true }],
           limit: 5,
-        }),
-      }
-    );
-
-    const countriesData = countriesResponse.ok ? await countriesResponse.json() : null;
-
-    // Fetch cities
-    const citiesDimensions = [{ name: "city" }];
-    if (rangeParam === '1d') citiesDimensions.push({ name: "dateHour" });
-    
-    const citiesResponse = await fetch(
-      `${GA_DATA_API}/properties/${propertyId}:runReport`,
-      {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          dateRanges: [
-            { startDate: breakdownStartDate, endDate: breakdownEndDate },
-          ],
-          metrics: [
-            { name: "activeUsers" },
-          ],
-          dimensions: citiesDimensions,
-          orderBys: [
-            {
-              metric: { metricName: "activeUsers" },
-              desc: true,
-            },
-          ],
+        }
+      ),
+      
+      // 5. Cities
+      makeGARequest(
+        [{ name: "activeUsers" }],
+        addDateHour([{ name: "city" }]),
+        { startDate: breakdownStartDate, endDate: breakdownEndDate },
+        {
+          orderBys: [{ metric: { metricName: "activeUsers" }, desc: true }],
           limit: 10,
-        }),
-      }
-    );
-
-    const citiesData = citiesResponse.ok ? await citiesResponse.json() : null;
-
-    // Fetch browsers
-    const browsersDimensions = [{ name: "browser" }];
-    if (rangeParam === '1d') browsersDimensions.push({ name: "dateHour" });
-    
-    const browsersResponse = await fetch(
-      `${GA_DATA_API}/properties/${propertyId}:runReport`,
-      {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          dateRanges: [
-            { startDate: breakdownStartDate, endDate: breakdownEndDate },
-          ],
-          metrics: [
-            { name: "activeUsers" },
-          ],
-          dimensions: browsersDimensions,
-          orderBys: [
-            {
-              metric: { metricName: "activeUsers" },
-              desc: true,
-            },
-          ],
+        }
+      ),
+      
+      // 6. Browsers
+      makeGARequest(
+        [{ name: "activeUsers" }],
+        addDateHour([{ name: "browser" }]),
+        { startDate: breakdownStartDate, endDate: breakdownEndDate },
+        {
+          orderBys: [{ metric: { metricName: "activeUsers" }, desc: true }],
           limit: 10,
-        }),
-      }
-    );
-
-    const browsersData = browsersResponse.ok ? await browsersResponse.json() : null;
-
-    // Fetch operating systems
-    const osDimensions = [{ name: "operatingSystem" }];
-    if (rangeParam === '1d') osDimensions.push({ name: "dateHour" });
-    
-    const osResponse = await fetch(
-      `${GA_DATA_API}/properties/${propertyId}:runReport`,
-      {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          dateRanges: [
-            { startDate: breakdownStartDate, endDate: breakdownEndDate },
-          ],
-          metrics: [
-            { name: "activeUsers" },
-          ],
-          dimensions: osDimensions,
-          orderBys: [
-            {
-              metric: { metricName: "activeUsers" },
-              desc: true,
-            },
-          ],
+        }
+      ),
+      
+      // 7. Operating Systems
+      makeGARequest(
+        [{ name: "activeUsers" }],
+        addDateHour([{ name: "operatingSystem" }]),
+        { startDate: breakdownStartDate, endDate: breakdownEndDate },
+        {
+          orderBys: [{ metric: { metricName: "activeUsers" }, desc: true }],
           limit: 10,
-        }),
-      }
-    );
-
-    const osData = osResponse.ok ? await osResponse.json() : null;
-
-    // Fetch referrers
-    const referrersDimensions = [{ name: "sessionSource" }];
-    if (rangeParam === '1d') referrersDimensions.push({ name: "dateHour" });
-    
-    const referrersResponse = await fetch(
-      `${GA_DATA_API}/properties/${propertyId}:runReport`,
-      {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          dateRanges: [
-            { startDate: breakdownStartDate, endDate: breakdownEndDate },
-          ],
-          metrics: [
-            { name: "activeUsers" },
-          ],
-          dimensions: referrersDimensions,
+        }
+      ),
+      
+      // 8. Referrers
+      makeGARequest(
+        [{ name: "activeUsers" }],
+        addDateHour([{ name: "sessionSource" }]),
+        { startDate: breakdownStartDate, endDate: breakdownEndDate },
+        {
           dimensionFilter: {
             filter: {
               fieldName: "sessionMedium",
@@ -441,39 +328,17 @@ export async function GET(
               },
             },
           },
-          orderBys: [
-            {
-              metric: { metricName: "activeUsers" },
-              desc: true,
-            },
-          ],
+          orderBys: [{ metric: { metricName: "activeUsers" }, desc: true }],
           limit: 5,
-        }),
-      }
-    );
-
-    const referrersData = referrersResponse.ok ? await referrersResponse.json() : null;
-
-    // Fetch social referrers
-    const socialDimensions = [{ name: "sessionSource" }];
-    if (rangeParam === '1d') socialDimensions.push({ name: "dateHour" });
-    
-    const socialResponse = await fetch(
-      `${GA_DATA_API}/properties/${propertyId}:runReport`,
-      {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          dateRanges: [
-            { startDate: breakdownStartDate, endDate: breakdownEndDate },
-          ],
-          metrics: [
-            { name: "activeUsers" },
-          ],
-          dimensions: socialDimensions,
+        }
+      ),
+      
+      // 9. Social networks
+      makeGARequest(
+        [{ name: "activeUsers" }],
+        addDateHour([{ name: "sessionSource" }]),
+        { startDate: breakdownStartDate, endDate: breakdownEndDate },
+        {
           dimensionFilter: {
             orGroup: {
               expressions: [
@@ -520,353 +385,168 @@ export async function GET(
               ],
             },
           },
-          orderBys: [
-            {
-              metric: { metricName: "activeUsers" },
-              desc: true,
-            },
-          ],
+          orderBys: [{ metric: { metricName: "activeUsers" }, desc: true }],
           limit: 5,
-        }),
-      }
-    );
-
-    const socialData = socialResponse.ok ? await socialResponse.json() : null;
-
-    // Fetch session medium (organic, cpc, referral, etc.)
-    const mediumDimensions = [{ name: "sessionMedium" }];
-    if (rangeParam === '1d') mediumDimensions.push({ name: "dateHour" });
-    
-    const mediumResponse = await fetch(
-      `${GA_DATA_API}/properties/${propertyId}:runReport`,
-      {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          dateRanges: [
-            { startDate: breakdownStartDate, endDate: breakdownEndDate },
-          ],
-          metrics: [
-            { name: "activeUsers" },
-            { name: "sessions" },
-          ],
-          dimensions: mediumDimensions,
-          orderBys: [
-            {
-              metric: { metricName: "activeUsers" },
-              desc: true,
-            },
-          ],
-          limit: 10,
-        }),
-      }
-    );
-
-    const mediumData = mediumResponse.ok ? await mediumResponse.json() : null;
-
-    // Fetch device category
-    const deviceDimensions = [{ name: "deviceCategory" }];
-    if (rangeParam === '1d') deviceDimensions.push({ name: "dateHour" });
-    
-    const deviceResponse = await fetch(
-      `${GA_DATA_API}/properties/${propertyId}:runReport`,
-      {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          dateRanges: [
-            { startDate: breakdownStartDate, endDate: breakdownEndDate },
-          ],
-          metrics: [
-            { name: "activeUsers" },
-            { name: "sessions" },
-          ],
-          dimensions: deviceDimensions,
-        }),
-      }
-    );
-
-    const deviceData = deviceResponse.ok ? await deviceResponse.json() : null;
-
-    // Fetch regions
-    const regionsDimensions = [{ name: "region" }];
-    if (rangeParam === '1d') regionsDimensions.push({ name: "dateHour" });
-    
-    const regionsResponse = await fetch(
-      `${GA_DATA_API}/properties/${propertyId}:runReport`,
-      {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          dateRanges: [
-            { startDate: breakdownStartDate, endDate: breakdownEndDate },
-          ],
-          metrics: [
-            { name: "activeUsers" },
-          ],
-          dimensions: regionsDimensions,
-          orderBys: [
-            {
-              metric: { metricName: "activeUsers" },
-              desc: true,
-            },
-          ],
-          limit: 20,
-        }),
-      }
-    );
-
-    const regionsData = regionsResponse.ok ? await regionsResponse.json() : null;
-
-    // Fetch continents
-    const continentsDimensions = [{ name: "continent" }];
-    if (rangeParam === '1d') continentsDimensions.push({ name: "dateHour" });
-    
-    const continentsResponse = await fetch(
-      `${GA_DATA_API}/properties/${propertyId}:runReport`,
-      {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          dateRanges: [
-            { startDate: breakdownStartDate, endDate: breakdownEndDate },
-          ],
-          metrics: [
-            { name: "activeUsers" },
-          ],
-          dimensions: continentsDimensions,
-          orderBys: [
-            {
-              metric: { metricName: "activeUsers" },
-              desc: true,
-            },
-          ],
-        }),
-      }
-    );
-
-    const continentsData = continentsResponse.ok ? await continentsResponse.json() : null;
-
-    // Fetch languages
-    const languagesDimensions = [{ name: "language" }];
-    if (rangeParam === '1d') languagesDimensions.push({ name: "dateHour" });
-    
-    const languagesResponse = await fetch(
-      `${GA_DATA_API}/properties/${propertyId}:runReport`,
-      {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          dateRanges: [
-            { startDate: breakdownStartDate, endDate: breakdownEndDate },
-          ],
-          metrics: [
-            { name: "activeUsers" },
-          ],
-          dimensions: languagesDimensions,
-          orderBys: [
-            {
-              metric: { metricName: "activeUsers" },
-              desc: true,
-            },
-          ],
-          limit: 10,
-        }),
-      }
-    );
-
-    const languagesData = languagesResponse.ok ? await languagesResponse.json() : null;
-
-    // Fetch mobile device branding
-    const mobileDevicesDimensions = [{ name: "mobileDeviceBranding" }];
-    if (rangeParam === '1d') mobileDevicesDimensions.push({ name: "dateHour" });
-    
-    const mobileDevicesResponse = await fetch(
-      `${GA_DATA_API}/properties/${propertyId}:runReport`,
-      {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          dateRanges: [
-            { startDate: breakdownStartDate, endDate: breakdownEndDate },
-          ],
-          metrics: [
-            { name: "activeUsers" },
-          ],
-          dimensions: mobileDevicesDimensions,
-          orderBys: [
-            {
-              metric: { metricName: "activeUsers" },
-              desc: true,
-            },
-          ],
-          limit: 10,
-        }),
-      }
-    );
-
-    const mobileDevicesData = mobileDevicesResponse.ok ? await mobileDevicesResponse.json() : null;
-
-    // Fetch screen resolution
-    const screenResolutionDimensions = [{ name: "screenResolution" }];
-    if (rangeParam === '1d') screenResolutionDimensions.push({ name: "dateHour" });
-    
-    const screenResolutionResponse = await fetch(
-      `${GA_DATA_API}/properties/${propertyId}:runReport`,
-      {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          dateRanges: [
-            { startDate: breakdownStartDate, endDate: breakdownEndDate },
-          ],
-          metrics: [
-            { name: "activeUsers" },
-          ],
-          dimensions: screenResolutionDimensions,
-          orderBys: [
-            {
-              metric: { metricName: "activeUsers" },
-              desc: true,
-            },
-          ],
-          limit: 10,
-        }),
-      }
-    );
-
-    const screenResolutionData = screenResolutionResponse.ok ? await screenResolutionResponse.json() : null;
-
-    // Fetch page titles (Views by Page)
-    const pageTitlesDimensions = [{ name: "pageTitle" }];
-    if (rangeParam === '1d') pageTitlesDimensions.push({ name: "dateHour" });
-    
-    const pageTitlesResponse = await fetch(
-      `${GA_DATA_API}/properties/${propertyId}:runReport`,
-      {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          dateRanges: [
-            { startDate: breakdownStartDate, endDate: breakdownEndDate },
-          ],
-          metrics: [
-            { name: "screenPageViews" },
-          ],
-          dimensions: pageTitlesDimensions,
-          orderBys: [
-            {
-              metric: { metricName: "screenPageViews" },
-              desc: true,
-            },
-          ],
-          limit: 10,
-        }),
-      }
-    );
-
-    const pageTitlesData = pageTitlesResponse.ok ? await pageTitlesResponse.json() : null;
-
-    // Fetch session default channel group
-    const channelGroupDimensions = [
-      { name: "sessionDefaultChannelGroup" },
-    ];
-    
-    // For "1d" range, add time dimension so we can filter to last 24h client-side
-    if (rangeParam === '1d') {
-      channelGroupDimensions.push({ name: "dateHour" });
-    }
-    
-    const channelGroupRequestBody = {
-      dateRanges: [
+        }
+      ),
+      
+      // 10. Medium
+      makeGARequest(
+        [{ name: "activeUsers" }, { name: "sessions" }],
+        addDateHour([{ name: "sessionMedium" }]),
         { startDate: breakdownStartDate, endDate: breakdownEndDate },
-      ],
-      metrics: [
-        { name: "sessions" },
-      ],
-      dimensions: channelGroupDimensions,
-      orderBys: [
         {
-          metric: { metricName: "sessions" },
-          desc: true,
-        },
-      ],
-    };
-    
-    console.log('📊 Channel Group API Request:', JSON.stringify(channelGroupRequestBody, null, 2));
-    
-    const channelGroupResponse = await fetch(
-      `${GA_DATA_API}/properties/${propertyId}:runReport`,
-      {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(channelGroupRequestBody),
-      }
-    );
+          orderBys: [{ metric: { metricName: "activeUsers" }, desc: true }],
+          limit: 10,
+        }
+      ),
+      
+      // 11. Device category
+      makeGARequest(
+        [{ name: "activeUsers" }, { name: "sessions" }],
+        addDateHour([{ name: "deviceCategory" }]),
+        { startDate: breakdownStartDate, endDate: breakdownEndDate }
+      ),
+      
+      // 12. Regions
+      makeGARequest(
+        [{ name: "activeUsers" }],
+        addDateHour([{ name: "region" }]),
+        { startDate: breakdownStartDate, endDate: breakdownEndDate },
+        {
+          orderBys: [{ metric: { metricName: "activeUsers" }, desc: true }],
+          limit: 20,
+        }
+      ),
+      
+      // 13. Continents
+      makeGARequest(
+        [{ name: "activeUsers" }],
+        addDateHour([{ name: "continent" }]),
+        { startDate: breakdownStartDate, endDate: breakdownEndDate },
+        {
+          orderBys: [{ metric: { metricName: "activeUsers" }, desc: true }],
+        }
+      ),
+      
+      // 14. Languages
+      makeGARequest(
+        [{ name: "activeUsers" }],
+        addDateHour([{ name: "language" }]),
+        { startDate: breakdownStartDate, endDate: breakdownEndDate },
+        {
+          orderBys: [{ metric: { metricName: "activeUsers" }, desc: true }],
+          limit: 10,
+        }
+      ),
+      
+      // 15. Mobile device branding
+      makeGARequest(
+        [{ name: "activeUsers" }],
+        addDateHour([{ name: "mobileDeviceBranding" }]),
+        { startDate: breakdownStartDate, endDate: breakdownEndDate },
+        {
+          orderBys: [{ metric: { metricName: "activeUsers" }, desc: true }],
+          limit: 10,
+        }
+      ),
+      
+      // 16. Screen resolution
+      makeGARequest(
+        [{ name: "activeUsers" }],
+        addDateHour([{ name: "screenResolution" }]),
+        { startDate: breakdownStartDate, endDate: breakdownEndDate },
+        {
+          orderBys: [{ metric: { metricName: "activeUsers" }, desc: true }],
+          limit: 10,
+        }
+      ),
+      
+      // 17. Page titles
+      makeGARequest(
+        [{ name: "screenPageViews" }],
+        addDateHour([{ name: "pageTitle" }]),
+        { startDate: breakdownStartDate, endDate: breakdownEndDate },
+        {
+          orderBys: [{ metric: { metricName: "screenPageViews" }, desc: true }],
+          limit: 10,
+        }
+      ),
+      
+      // 18. Channel group
+      makeGARequest(
+        [{ name: "sessions" }],
+        rangeParam === '1d' 
+          ? [{ name: "sessionDefaultChannelGroup" }, { name: "dateHour" }]
+          : [{ name: "sessionDefaultChannelGroup" }],
+        { startDate: breakdownStartDate, endDate: breakdownEndDate },
+        {
+          orderBys: [{ metric: { metricName: "sessions" }, desc: true }],
+        }
+      ),
+      
+      // 19. User activity
+      makeGARequest(
+        [{ name: "activeUsers" }, { name: "newUsers" }],
+        [timeDimension],
+        { startDate, endDate }
+      ),
+    ]);
 
-    const channelGroupData = channelGroupResponse.ok ? await channelGroupResponse.json() : null;
-    
-    if (channelGroupData) {
-      console.log('📊 Channel Group API Response rows:', channelGroupData.rows?.length || 0);
-      if (channelGroupData.rows) {
-        channelGroupData.rows.forEach((row: any) => {
-          console.log(`  - ${row.dimensionValues[0].value}: ${row.metricValues[0].value} sessions`);
-        });
-      }
+    // Check if primary metrics request failed
+    if (!metricsResponse.ok) {
+      const errorData = await metricsResponse.json();
+      console.error("GA API error:", errorData);
+      return NextResponse.json(
+        { error: "Failed to fetch GA data", details: errorData },
+        { status: 500 }
+      );
     }
 
-    // Fetch user activity over time (daily active users)
-    const userActivityResponse = await fetch(
-      `${GA_DATA_API}/properties/${propertyId}:runReport`,
-      {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          dateRanges: [
-            { startDate, endDate },
-          ],
-          metrics: [
-            { name: "activeUsers" },
-            { name: "newUsers" },
-          ],
-          dimensions: [
-            timeDimension,
-          ],
-        }),
-      }
-    );
+    // Parse all responses in parallel
+    const [
+      metricsData,
+      totalMetricsData,
+      sourcesData,
+      countriesData,
+      citiesData,
+      browsersData,
+      osData,
+      referrersData,
+      socialData,
+      mediumData,
+      deviceData,
+      regionsData,
+      continentsData,
+      languagesData,
+      mobileDevicesData,
+      screenResolutionData,
+      pageTitlesData,
+      channelGroupData,
+      userActivityData,
+    ] = await Promise.all([
+      metricsResponse.json(),
+      totalMetricsResponse.ok ? totalMetricsResponse.json() : null,
+      sourcesResponse.ok ? sourcesResponse.json() : null,
+      countriesResponse.ok ? countriesResponse.json() : null,
+      citiesResponse.ok ? citiesResponse.json() : null,
+      browsersResponse.ok ? browsersResponse.json() : null,
+      osResponse.ok ? osResponse.json() : null,
+      referrersResponse.ok ? referrersResponse.json() : null,
+      socialResponse.ok ? socialResponse.json() : null,
+      mediumResponse.ok ? mediumResponse.json() : null,
+      deviceResponse.ok ? deviceResponse.json() : null,
+      regionsResponse.ok ? regionsResponse.json() : null,
+      continentsResponse.ok ? continentsResponse.json() : null,
+      languagesResponse.ok ? languagesResponse.json() : null,
+      mobileDevicesResponse.ok ? mobileDevicesResponse.json() : null,
+      screenResolutionResponse.ok ? screenResolutionResponse.json() : null,
+      pageTitlesResponse.ok ? pageTitlesResponse.json() : null,
+      channelGroupResponse.ok ? channelGroupResponse.json() : null,
+      userActivityResponse.ok ? userActivityResponse.json() : null,
+    ]);
 
-    const userActivityData = userActivityResponse.ok ? await userActivityResponse.json() : null;
+    console.log('Channel Group data:', channelGroupData);
 
     return NextResponse.json({
       metrics: metricsData,
