@@ -122,46 +122,54 @@ export async function GET(
       );
     }
 
-    // Always refresh the token to ensure it's valid
-    console.log("Refreshing Google OAuth token...");
-    const refreshResponse = await fetch("https://oauth2.googleapis.com/token", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: new URLSearchParams({
-        client_id: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID!,
-        client_secret: process.env.GOOGLE_CLIENT_SECRET!,
-        refresh_token: refreshToken,
-        grant_type: "refresh_token",
-      }),
-    });
+    // Check if token needs refresh (refresh only if expires in <5 minutes)
+    const now = Math.floor(Date.now() / 1000);
+    const expiresAt = credentials.expires_at || 0;
+    const timeUntilExpiry = expiresAt - now;
+    const needsRefresh = timeUntilExpiry < 300; // 5 minutes buffer
 
-    if (refreshResponse.ok) {
-      const refreshData = await refreshResponse.json();
-      accessToken = refreshData.access_token;
-      const now = Math.floor(Date.now() / 1000);
-      
-      // Update the credentials in database
-      const newCredentials = {
-        ...credentials,
-        access_token: refreshData.access_token,
-        expires_at: now + (refreshData.expires_in || 3600),
-      };
+    if (needsRefresh) {
+      console.log(`Token expires in ${Math.floor(timeUntilExpiry / 60)} minutes, refreshing...`);
+      const refreshResponse = await fetch("https://oauth2.googleapis.com/token", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({
+          client_id: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID!,
+          client_secret: process.env.GOOGLE_CLIENT_SECRET!,
+          refresh_token: refreshToken,
+          grant_type: "refresh_token",
+        }),
+      });
 
-      await supabase
-        .from("integrations")
-        .update({ credentials: newCredentials })
-        .eq("id", campaign.integrations.id);
-      
-      console.log("Token refreshed successfully");
+      if (refreshResponse.ok) {
+        const refreshData = await refreshResponse.json();
+        accessToken = refreshData.access_token;
+        
+        // Update the credentials in database
+        const newCredentials = {
+          ...credentials,
+          access_token: refreshData.access_token,
+          expires_at: now + (refreshData.expires_in || 3600),
+        };
+
+        await supabase
+          .from("integrations")
+          .update({ credentials: newCredentials })
+          .eq("id", campaign.integrations.id);
+        
+        console.log("✅ Token refreshed successfully");
+      } else {
+        const errorText = await refreshResponse.text();
+        console.error("Token refresh failed:", errorText);
+        return NextResponse.json(
+          { error: "Failed to refresh authentication. Please reconnect your Google Analytics account." },
+          { status: 401 }
+        );
+      }
     } else {
-      const errorText = await refreshResponse.text();
-      console.error("Token refresh failed:", errorText);
-      return NextResponse.json(
-        { error: "Failed to refresh authentication. Please reconnect your Google Analytics account." },
-        { status: 401 }
-      );
+      console.log(`✅ Token valid for ${Math.floor(timeUntilExpiry / 60)} more minutes, skipping refresh`);
     }
 
     // Fetch GA4 metrics - Time series data with breakdown by hour/day
