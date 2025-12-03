@@ -132,7 +132,7 @@ export default function NewCampaignClient({
   };
 
   return (
-    <div className="min-h-screen bg-linear-to-b from-slate-950 via-slate-900 to-slate-950">
+    <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
       {/* Header */}
       <header className="border-b border-slate-800 bg-slate-900/50 backdrop-blur-xl">
         <div className="max-w-5xl mx-auto px-6 py-4">
@@ -280,7 +280,7 @@ export default function NewCampaignClient({
               <button
                 onClick={() => setStep(3)}
                 disabled={!selectedProperty}
-                className="px-8 py-3 bg-linear-to-r from-emerald-500 to-cyan-500 rounded-lg font-semibold hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-8 py-3 bg-gradient-to-r from-emerald-500 to-cyan-500 rounded-lg font-semibold hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Continue
               </button>
@@ -334,7 +334,7 @@ export default function NewCampaignClient({
               <button
                 onClick={handleSubmit}
                 disabled={!campaignName}
-                className="px-8 py-3 bg-linear-to-r from-emerald-500 to-cyan-500 rounded-lg font-semibold hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-8 py-3 bg-gradient-to-r from-emerald-500 to-cyan-500 rounded-lg font-semibold hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Create Campaign
               </button>

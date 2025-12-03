@@ -1014,6 +1014,70 @@ function TrafficTab({ metrics, dateRange }: { metrics: any; dateRange: string })
           </div>
         </div>
       </div>
+
+      {/* Traffic Sources Engagement Section - Full Width */}
+      <div className="bg-slate-900/50 backdrop-blur-xl border border-slate-800 rounded-2xl p-6">
+        <h2 className="text-lg font-bold mb-6 flex items-center gap-2">
+          <Globe className="w-5 h-5 text-emerald-400" />
+          Traffic Sources Engagement
+        </h2>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-slate-800">
+                <th className="text-left py-3 px-4 text-slate-400 text-sm font-medium">Source</th>
+                <th className="text-right py-3 px-4 text-slate-400 text-sm font-medium">Users</th>
+                <th className="text-right py-3 px-4 text-slate-400 text-sm font-medium">Sessions</th>
+                <th className="text-right py-3 px-4 text-slate-400 text-sm font-medium">Bounce Rate</th>
+                <th className="text-right py-3 px-4 text-slate-400 text-sm font-medium">Avg Duration</th>
+                <th className="text-right py-3 px-4 text-slate-400 text-sm font-medium">Pages/Session</th>
+                <th className="text-right py-3 px-4 text-slate-400 text-sm font-medium">Engagement</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredSources?.rows && filteredSources.rows.length > 0 ? (
+                filteredSources.rows.slice(0, 10).map((row: any, index: number) => {
+                  const source = row.dimensionValues[0]?.value || "Unknown";
+                  const users = parseInt(row.metricValues[0]?.value || 0);
+                  const sessions = parseInt(row.metricValues[1]?.value || 0);
+                  const bounceRate = parseFloat(row.metricValues[2]?.value || 0);
+                  const avgDuration = parseFloat(row.metricValues[3]?.value || 0);
+                  const pagesPerSession = parseFloat(row.metricValues[4]?.value || 0);
+                  const engagementRate = parseFloat(row.metricValues[5]?.value || 0);
+
+                  return (
+                    <tr key={index} className="border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
+                      <td className="py-3 px-4 text-slate-200 text-sm font-medium">{source}</td>
+                      <td className="py-3 px-4 text-right text-emerald-400 text-sm font-semibold">{users.toLocaleString()}</td>
+                      <td className="py-3 px-4 text-right text-slate-300 text-sm">{sessions.toLocaleString()}</td>
+                      <td className="py-3 px-4 text-right text-sm">
+                        <span className={`${bounceRate > 0.7 ? 'text-red-400' : bounceRate > 0.4 ? 'text-yellow-400' : 'text-green-400'}`}>
+                          {(bounceRate * 100).toFixed(1)}%
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-right text-slate-300 text-sm">
+                        {Math.floor(avgDuration / 60)}m {Math.floor(avgDuration % 60)}s
+                      </td>
+                      <td className="py-3 px-4 text-right text-slate-300 text-sm">{pagesPerSession.toFixed(2)}</td>
+                      <td className="py-3 px-4 text-right text-sm">
+                        <span className={`${engagementRate > 0.7 ? 'text-green-400' : engagementRate > 0.4 ? 'text-yellow-400' : 'text-red-400'}`}>
+                          {(engagementRate * 100).toFixed(1)}%
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })
+              ) : (
+                <tr>
+                  <td colSpan={7} className="py-8 text-center text-slate-500 text-sm">
+                    No traffic source data available
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1113,10 +1177,10 @@ function GeographicTab({ metrics, dateRange }: { metrics: any; dateRange: string
   
   // Create a map of country names to user counts for the map visualization
   const countryUserMap = new Map(
-    countryData.map(c => [normalizeCountryName(c.country), c.users])
+    countryData.map((c: any) => [normalizeCountryName(c.country), c.users])
   );
   
-  const maxUsers = Math.max(...countryData.map(c => c.users), 1);
+  const maxUsers = Math.max(...countryData.map((c: any) => c.users), 1);
   
   // Function to get color based on user count
   const getCountryColor = (countryName: string) => {
@@ -1129,7 +1193,7 @@ function GeographicTab({ metrics, dateRange }: { metrics: any; dateRange: string
     if (isFrenchTerritory) return '#1e293b'; // Keep territories gray
     
     const normalizedName = normalizeCountryName(countryName);
-    const users = countryUserMap.get(normalizedName) || 0;
+    const users = (countryUserMap.get(normalizedName) || 0) as number;
     if (users === 0) return '#1e293b'; // slate-800 for countries with no data
     
     const intensity = users / maxUsers;
@@ -1187,11 +1251,11 @@ function GeographicTab({ metrics, dateRange }: { metrics: any; dateRange: string
           >
             <ZoomableGroup>
               <Geographies geography="https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json">
-                {({ geographies }) =>
-                  geographies.map((geo) => {
+                {({ geographies }: any) =>
+                  geographies.map((geo: any) => {
                     const countryName = geo.properties.name;
                     const normalizedName = normalizeCountryName(countryName);
-                    const users = countryUserMap.get(normalizedName) || 0;
+                    const users = (countryUserMap.get(normalizedName) || 0) as number;
                     
                     // Filter out France's overseas territories
                     const isFrenchTerritory = countryName === 'French Guiana' || 
@@ -1206,14 +1270,14 @@ function GeographicTab({ metrics, dateRange }: { metrics: any; dateRange: string
                         fill={getCountryColor(countryName)}
                         stroke="#0f172a"
                         strokeWidth={0.5}
-                        onMouseEnter={(e) => {
+                        onMouseEnter={(e: any) => {
                           if (users > 0 && !isFrenchTerritory) {
-                            const displayName = countryData.find(c => normalizeCountryName(c.country) === normalizedName)?.country || countryName;
+                            const displayName = countryData.find((c: any) => normalizeCountryName(c.country) === normalizedName)?.country || countryName;
                             setTooltipContent(`${displayName}: ${users} users`);
                             setShowTooltip(true);
                           }
                         }}
-                        onMouseMove={(e) => {
+                        onMouseMove={(e: any) => {
                           setTooltipPosition({ x: e.clientX, y: e.clientY });
                         }}
                         onMouseLeave={() => {
@@ -1221,13 +1285,13 @@ function GeographicTab({ metrics, dateRange }: { metrics: any; dateRange: string
                           setTooltipContent('');
                         }}
                         style={{
-                          default: { outline: 'none' },
+                          default: { outline: 'none' } as any,
                           hover: {
                             fill: users > 0 && !isFrenchTerritory ? '#059669' : '#1e293b',
                             outline: 'none',
                             cursor: users > 0 && !isFrenchTerritory ? 'pointer' : 'default'
-                          },
-                          pressed: { outline: 'none' }
+                          } as any,
+                          pressed: { outline: 'none' } as any
                         }}
                       />
                     );
